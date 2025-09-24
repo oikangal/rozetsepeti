@@ -1,0 +1,46 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Tema değişkenleri (marka moru eklendi) */
+:root {
+  --rs-bg: 255 255 255;
+  --rs-fg: 17 24 39;
+  --brand: #6E15CC; /* hover alt-çizgi ve vurgu rengi */
+}
+
+/* Genel davranışlar */
+html { scroll-behavior: smooth; }
+body { background: rgb(var(--rs-bg)); color: rgb(var(--rs-fg)); }
+
+/* Erişilebilir odak */
+:focus-visible { outline: 2px solid #0284c7; outline-offset: 2px; }
+
+/* <details>/<summary> caret animasyonu */
+summary::marker { content: ""; }
+summary .caret { transition: transform .2s ease; }
+details[open] summary .caret { transform: rotate(90deg); }
+
+/* (Opsiyonel) Link altı çizgisini varsayılan kapatmak istersen:
+a { text-decoration: none; }
+*/
+
+/* ===== Flat Marquee ===== */
+@keyframes rs-marquee-left {
+  0%   { transform: translateX(0); }
+  100% { transform: translateX(-50%); }  /* içerik iki kez kopyalandığı için -50% */
+}
+.rs-marquee {
+  display: flex;
+  flex-wrap: nowrap;        /* TEK SATIR ZORLA */
+  white-space: nowrap;      /* Sarma yok */
+  width: max-content;
+  will-change: transform;
+  animation: rs-marquee-left 182s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .rs-marquee { animation: none; }
+}
+/* swappable kelime geçişleri için */
+.swappable-enter { transform: translateY(0); }
+.swappable-leave { transform: translateY(-1.2em); }
