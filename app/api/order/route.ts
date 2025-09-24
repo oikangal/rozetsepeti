@@ -12,16 +12,15 @@ function envOrThrow(name: string) {
 
 export async function POST(req: Request) {
     try {
-        // 1) ENV
-        const host = envOrThrow('MAILTRAP_HOST')
-        const port = Number(envOrThrow('MAILTRAP_PORT'))
-        const user = envOrThrow('MAILTRAP_USER')
-        const pass = envOrThrow('MAILTRAP_PASS')
+        // ENV
+        const host = envOrThrow('SMTP_HOST')
+        const port = Number(envOrThrow('SMTP_PORT'))
+        const user = envOrThrow('SMTP_USER')
+        const pass = envOrThrow('SMTP_PASS')
+        const from = envOrThrow('MAIL_FROM')
+        const to   = envOrThrow('MAIL_TO')
 
-        // ✅ Mail doğrudan info@rozetsepeti.com adresine gidecek
-        const to = 'info@rozetsepeti.com'
-
-        // 2) Form verisi
+        // Form verisi
         const fd = await req.formData()
         const adsoyad = String(fd.get('adsoyad') || '')
         const telefon = String(fd.get('telefon') || '')
@@ -30,7 +29,7 @@ export async function POST(req: Request) {
         const mesaj   = String(fd.get('mesaj')   || '')
         const urunler = fd.getAll('urunler').map(String)
 
-        // 3) Dosyalar → attachments
+        // Dosyalar → attachments
         const files = fd.getAll('files') as File[]
         const attachments = await Promise.all(
             files.filter(Boolean).map(async (f) => {
@@ -43,27 +42,29 @@ export async function POST(req: Request) {
             })
         )
 
-        // 4) Transport
+        // Transporter (465 => SSL)
         const transporter = nodemailer.createTransport({
             host,
             port,
+            secure:
+                String(process.env.SMTP_SECURE).toLowerCase() === 'true' ||
+                Number(port) === 465,
             auth: { user, pass },
         })
 
-        // 5) Gövde
+        // HTML mail gövdesi
         const html = `
       <h2>Yeni Sipariş Talebi</h2>
       <p><b>Ad Soyad:</b> ${escapeHtml(adsoyad)}</p>
       <p><b>Telefon:</b> ${escapeHtml(telefon)}</p>
       <p><b>E-posta:</b> ${escapeHtml(email)}</p>
-      <p><b>İstenilen Ürün(ler):</b> ${urunler.map(escapeHtml).join(', ') || '-'}</p>
+      <p><b>Ürünler:</b> ${urunler.map(escapeHtml).join(', ') || '-'}</p>
       <p><b>Adet:</b> ${escapeHtml(adet)}</p>
       <p><b>Mesaj:</b><br/>${escapeHtml(mesaj).replace(/\n/g, '<br/>') || '-'}</p>
     `.trim()
 
-        // 6) Gönder
         const info = await transporter.sendMail({
-            from: `"RozetSepeti Site" <no-reply@rozetsepeti.com>`,
+            from,
             to,
             subject: `Yeni Sipariş Talebi – ${adsoyad || 'İsimsiz'}`,
             html,
@@ -81,7 +82,7 @@ export async function POST(req: Request) {
     }
 }
 
-// XSS kaçışı
+// basit XSS kaçışı
 function escapeHtml(s: string) {
     return s.replace(/[&<>"']/g, (m) => ({
         '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
