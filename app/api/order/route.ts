@@ -25,9 +25,18 @@ export async function POST(req: Request) {
         const adsoyad = String(fd.get('adsoyad') || '')
         const telefon = String(fd.get('telefon') || '')
         const email   = String(fd.get('email')   || '')
-        const adet    = String(fd.get('adet')    || '')
         const mesaj   = String(fd.get('mesaj')   || '')
-        const urunler = fd.getAll('urunler').map(String)
+
+        // ✅ ürünler_json desteği
+        let urunlerDetay: Record<string, number> = {}
+        const j = fd.get('urunler_json')
+        if (j) {
+            try {
+                urunlerDetay = JSON.parse(String(j) || '{}')
+            } catch {
+                urunlerDetay = {}
+            }
+        }
 
         // Dosyalar → attachments
         const files = fd.getAll('files') as File[]
@@ -53,13 +62,18 @@ export async function POST(req: Request) {
         })
 
         // HTML mail gövdesi
+        const urunlerHtml = Object.entries(urunlerDetay).length
+            ? Object.entries(urunlerDetay)
+                .map(([k, v]) => `${escapeHtml(k)}: ${v} adet`)
+                .join('<br/>')
+            : '-'
+
         const html = `
       <h2>Yeni Sipariş Talebi</h2>
       <p><b>Ad Soyad:</b> ${escapeHtml(adsoyad)}</p>
       <p><b>Telefon:</b> ${escapeHtml(telefon)}</p>
       <p><b>E-posta:</b> ${escapeHtml(email)}</p>
-      <p><b>Ürünler:</b> ${urunler.map(escapeHtml).join(', ') || '-'}</p>
-      <p><b>Adet:</b> ${escapeHtml(adet)}</p>
+      <p><b>Ürünler:</b><br/>${urunlerHtml}</p>
       <p><b>Mesaj:</b><br/>${escapeHtml(mesaj).replace(/\n/g, '<br/>') || '-'}</p>
     `.trim()
 
