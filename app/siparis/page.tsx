@@ -1,83 +1,135 @@
-// app/api/order/route.ts
-import nodemailer from 'nodemailer'
+'use client'
 
-export const runtime = 'nodejs'
-export const dynamic = 'force-dynamic'
+import { useState } from 'react'
 
-const env = (k: string) => {
-    const v = process.env[k]
-    if (!v) throw new Error(`Missing env ${k}`)
-    return v
-}
+type SubmitState = { status: 'idle' | 'sending' | 'ok' | 'error'; message?: string }
 
-export async function POST(req: Request) {
-    try {
-        // SMTP
-        const transporter = nodemailer.createTransport({
-            host: env('SMTP_HOST'),
-            port: Number(env('SMTP_PORT')),
-            secure: process.env.SMTP_SECURE === 'true',
-            auth: { user: env('SMTP_USER'), pass: env('SMTP_PASS') },
-        })
+const URUNLER = [
+    { key: 'akrilik-rozet',      label: 'Akrilik Rozet' },
+    { key: 'kumas-anahtarlik',   label: 'Kumaş Anahtarlık' },
+    { key: 'yaka-isimligi',      label: 'Yaka İsimliği' },
+    { key: 'akrilik-anahtarlik', label: 'Akrilik Anahtarlık' },
+]
 
-        const fd = await req.formData()
+const OK_FILE_TYPES = ['application/pdf','image/jpeg','image/png','image/tiff'] as const
+const MAX_FILE_MB = 20
+const MIN_QTY = 10
 
-        const adsoyad = String(fd.get('adsoyad') || '')
-        const telefon = String(fd.get('telefon') || '')
-        const email   = String(fd.get('email')   || '')
-        const mesaj   = String(fd.get('mesaj')   || '')
+export default function SiparisPage() {
+    const [state, setState] = useState<SubmitState>({ status: 'idle' })
+    const [qty, setQty] = useState<Record<string, number>>({})
 
-        // Yeni: ürünler+adetler JSON
-        let urunMap: Record<string, number> = {}
-        try {
-            urunMap = JSON.parse(String(fd.get('urunler_json') || '{}'))
-        } catch {}
+    const toggleProduct = (key: string, checked: boolean) =>
+        setQty((p) => (checked ? { ...p, [key]: p[key] ?? MIN_QTY } : (Object.assign({}, p, (delete p[key], p)))))
 
-        // attachments (opsiyonel)
-        const files = fd.getAll('files') as File[]
-        const attachments = await Promise.all(
-            files.filter(Boolean).map(async (f) => {
-                const ab = await f.arrayBuffer()
-                return {
-                    filename: f.name || 'dosya',
-                    content: Buffer.from(ab),
-                    contentType: f.type || undefined,
-                }
-            })
-        )
-
-        // ürün satırları
-        const urunSatirlari = Object.entries(urunMap)
-            .map(([k, n]) => `• ${k} – ${n} adet`)
-            .join('<br/>') || '-'
-
-        const html = `
-      <h2>Yeni Sipariş Talebi</h2>
-      <p><b>Ad Soyad:</b> ${esc(adsoyad)}</p>
-      <p><b>Telefon:</b> ${esc(telefon)}</p>
-      <p><b>E-posta:</b> ${esc(email)}</p>
-      <p><b>Ürünler:</b><br/>${urunSatirlari}</p>
-      <p><b>Mesaj:</b><br/>${esc(mesaj).replace(/\n/g, '<br/>') || '-'}</p>
-    `.trim()
-
-        const info = await transporter.sendMail({
-            from: env('MAIL_FROM'),
-            to:   env('MAIL_TO'),
-            subject: `Yeni Sipariş Talebi – ${adsoyad || 'İsimsiz'}`,
-            html,
-            replyTo: email || undefined,
-            attachments,
-        })
-
-        return Response.json({ ok: true, id: info.messageId })
-    } catch (err: any) {
-        console.error('ORDER_API_ERROR:', err?.message || err)
-        return new Response(JSON.stringify({ ok: false, error: err?.message || 'Server error' }), {
-            status: 500,
-            headers: { 'Content-Type': 'application/json' },
-        })
+    const changeQty = (key: string, val: string) => {
+        const n = parseInt(val, 10)
+        setQty((p) => ({ ...p, [key]: Math.max(MIN_QTY, Number.isFinite(n) ? n : MIN_QTY) }))
     }
-}
 
-const esc = (s: string) =>
-    s.replace(/[&<>"']/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m] as string))
+    const onSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+        e.preventDefault()
+        const form = e.currentTarget
+        const fd = new FormData(form)
+
+        const chosen = Object.entries(qty).filter(([, n]) => Number.isFinite(n) && n >= MIN_QTY)
+        if (chosen.length === 0) { setState({ status: 'error', message: `Lütfen en az bir ürün seçip en az ${MIN_QTY} adet girin.` }); return }
+
+        const files = (fd.getAll('files') as File[]).filter(Boolean)
+        for (const f of files) {
+            if (f.size > MAX_FILE_MB * 1024 * 1024) { setState({ status: 'error', message: `“${f.name}” ${MAX_FILE_MB}MB sınırını aşıyor.` }); return }
+            const isAi = f.name.toLowerCase().endsWith('.ai')
+            const typeOk = (OK_FILE_TYPES as readonly string[]).includes(f.type) || isAi
+            if (!typeOk) { setState({ status: 'error', message: `“${f.name}” desteklenmeyen dosya türü.` }); return }
+        }
+
+        fd.append('urunler_json', JSON.stringify(qty))
+
+        setState({ status: 'sending' })
+        try {
+            const res = await fetch('/api/order', { method: 'POST', body: fd })
+            const json = await res.json().catch(() => ({}))
+            if (!res.ok || !json?.ok) throw new Error(json?.error || 'Gönderim hatası')
+            setState({ status: 'ok' })
+            form.reset()
+            setQty({})
+        } catch (err: any) {
+            setState({ status: 'error', message: err?.message || 'Bir hata oluştu' })
+        }
+    }
+
+    return (
+        <main className="container max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Sipariş Formu</h1>
+            <p className="mt-2 text-gray-600">Bilgilerinizi iletin, 24 saat içinde size dönüş yapalım.</p>
+
+            <form onSubmit={onSubmit} className="mt-6 grid gap-4" noValidate>
+                <label className="grid gap-1 text-sm">
+                    <span className="font-medium">Ad Soyad</span>
+                    <input name="adsoyad" required autoComplete="name" className="rounded-2xl border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/30 focus:border-[var(--brand)]" placeholder="Adınız ve Soyadınız" />
+                </label>
+
+                <label className="grid gap-1 text-sm">
+                    <span className="font-medium">Telefon Numarası</span>
+                    <input name="telefon" required autoComplete="tel" inputMode="tel" placeholder="05xx xxx xx xx" className="rounded-2xl border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/30 focus:border-[var(--brand)]" />
+                </label>
+
+                <label className="grid gap-1 text-sm">
+                    <span className="font-medium">E-Posta Adresi</span>
+                    <input name="email" type="email" required autoComplete="email" placeholder="ornek@eposta.com" className="rounded-2xl border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/30 focus:border-[var(--brand)]" />
+                </label>
+
+                <fieldset className="grid gap-2">
+                    <legend className="text-sm font-medium">İstenilen Ürün(ler) ve Adet(ler)</legend>
+                    <div className="grid gap-2">
+                        {URUNLER.map((u) => {
+                            const checked = u.key in qty
+                            return (
+                                <div key={u.key} className="flex items-center justify-between gap-3 rounded-2xl border px-3 py-2">
+                                    <label className="flex items-center gap-2 cursor-pointer">
+                                        <input type="checkbox" className="accent-[var(--brand)]" checked={checked} onChange={(ev) => toggleProduct(u.key, ev.currentTarget.checked)} />
+                                        <span className="text-sm">{u.label}</span>
+                                    </label>
+                                    {checked && (
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-xs text-gray-600">Adet</span>
+                                            <input
+                                                type="number" min={MIN_QTY}
+                                                value={qty[u.key] ?? MIN_QTY}
+                                                onChange={(e) => changeQty(u.key, e.target.value)}
+                                                className="w-24 rounded-xl border px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/30 focus:border-[var(--brand)]"
+                                                inputMode="numeric"
+                                            />
+                                        </div>
+                                    )}
+                                </div>
+                            )
+                        })}
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">Her ürün için minimum {MIN_QTY} adettir.</p>
+                </fieldset>
+
+                <label className="grid gap-1 text-sm">
+                    <span className="font-medium">Mesaj</span>
+                    <textarea name="mesaj" rows={4} placeholder="Notlarınız / talepleriniz…" className="rounded-2xl border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/30 focus:border-[var(--brand)]" />
+                </label>
+
+                <div className="grid gap-1 text-sm">
+                    <span className="font-medium">Logo / Dosya Yükleme (opsiyonel)</span>
+                    <input name="files" type="file" multiple accept=".pdf,.ai,.jpg,.jpeg,.png,.tif,.tiff,application/pdf,image/jpeg,image/png,image/tiff" className="rounded-2xl border px-3 py-2 file:mr-3 file:rounded-xl file:border-0 file:bg-gray-100 file:px-3 file:py-1.5 hover:file:bg-gray-200" />
+                    <p className="text-xs text-gray-500">Maks. {MAX_FILE_MB} MB. Desteklenen: PDF, AI, JPG, PNG, TIFF.</p>
+                </div>
+
+                <div className="pt-2">
+                    <button type="submit" disabled={state.status === 'sending'} className="group relative overflow-hidden inline-flex items-center justify-center rounded-full px-6 py-2.5 min-w-[200px] text-sm font-medium shadow-sm text-white disabled:opacity-60" style={{ background: 'var(--brand)' }} aria-busy={state.status === 'sending'}>
+                        <span className="absolute inset-x-0 bottom-0 h-0 bg-[#F9B233] transition-all duration-300 ease-out group-hover:h-full" />
+                        <span className="relative z-10 group-hover:text-black">{state.status === 'sending' ? 'Gönderiliyor…' : 'Formu Gönder'}</span>
+                    </button>
+                </div>
+
+                {state.status === 'ok' && <div className="mt-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">Talebiniz başarıyla alınmıştır. 24 saat içerisinde size dönüş sağlanacaktır.</div>}
+                {state.status === 'error' && <div className="mt-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{state.message || 'Gönderim sırasında bir hata oluştu.'}</div>}
+            </form>
+        </main>
+    )
+}
