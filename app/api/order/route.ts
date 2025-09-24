@@ -1,87 +1,92 @@
 // app/api/order/route.ts
 import nodemailer from 'nodemailer'
 
-export const runtime = 'nodejs'        // Edge değil; Node gerekir
-export const dynamic = 'force-dynamic' // Önbelleğe alma
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+// not: app router için body limit ayarı yok; büyük dosyada mail fail ederse hata yakalanır
 
-function env(name: string, fallback?: string) {
-    const v = process.env[name] ?? fallback
-    if (!v) throw new Error(`Missing env: ${name}`)
+function envOrThrow(name: string) {
+    const v = process.env[name]
+    if (!v) throw new Error(`Missing env ${name}`)
     return v
 }
 
 export async function POST(req: Request) {
     try {
-        const form = await req.formData()
+        // 1) ENV
+        const host = envOrThrow('MAILTRAP_HOST')          // örn: sandbox.smtp.mailtrap.io
+        const port = Number(envOrThrow('MAILTRAP_PORT'))  // örn: 2525
+        const user = envOrThrow('MAILTRAP_USER')          // Mailtrap user
+        const pass = envOrThrow('MAILTRAP_PASS')          // Mailtrap pass
+        const to   = process.env['ORDER_TO'] || 'orders@example.com' // İstersen Render’da ORDER_TO ekle
 
-        // ---- Alanlar
-        const adsoyad = String(form.get('adsoyad') || '')
-        const telefon = String(form.get('telefon') || '')
-        const email   = String(form.get('email')   || '')
-        const adetRaw = String(form.get('adet')    || '')
-        const mesaj   = String(form.get('mesaj')   || '')
-        const urunler = form.getAll('urunler').map(String) // çoklu checkbox
+        // 2) Form verisi
+        const fd = await req.formData()
 
-        const adet = parseInt(adetRaw, 10)
-        if (!adsoyad || !telefon || !email || !Number.isFinite(adet) || adet < 10) {
-            return Response.json({ ok: false, error: 'Geçersiz veya eksik alanlar.' }, { status: 400 })
-        }
+        const adsoyad = String(fd.get('adsoyad') || '')
+        const telefon = String(fd.get('telefon') || '')
+        const email   = String(fd.get('email')   || '')
+        const adet    = String(fd.get('adet')    || '')
+        const mesaj   = String(fd.get('mesaj')   || '')
 
-        // ---- Dosyalar
-        const files = form.getAll('files').filter(Boolean) as File[]
+        // Çoklu checkbox: urunler
+        const urunler = fd.getAll('urunler').map(String)
+
+        // 3) Dosyalar → attachments
+        const files = fd.getAll('files') as File[]
         const attachments = await Promise.all(
-            files.map(async (f) => ({
-                filename: f.name || 'dosya',
-                content: Buffer.from(await f.arrayBuffer()),
-                contentType: f.type || undefined,
-            }))
+            files.filter(Boolean).map(async (f) => {
+                const ab = await f.arrayBuffer()
+                return {
+                    filename: f.name || 'dosya',
+                    content: Buffer.from(ab),
+                    contentType: f.type || undefined,
+                }
+            })
         )
 
-        // ---- Mail transporter (Mailtrap SMTP)
+        // 4) Transport
         const transporter = nodemailer.createTransport({
-            host: env('MAIL_HOST', 'sandbox.smtp.mailtrap.io'),
-            port: parseInt(env('MAIL_PORT', '2525'), 10),
-            auth: {
-                user: env('MAIL_USER'),
-                pass: env('MAIL_PASS'),
-            },
+            host,
+            port,
+            auth: { user, pass },
         })
 
-        // ---- E-posta içeriği
-        const to = env('MAIL_TO') // Mailtrap inbox alıcısı (veya kendi mailin)
-        const subject = `Yeni Sipariş Talebi · ${adsoyad} · ${urunler.join(', ') || 'Ürün seçilmedi'}`
+        // 5) E-posta gövdesi
         const html = `
       <h2>Yeni Sipariş Talebi</h2>
-      <ul>
-        <li><b>Ad Soyad:</b> ${escapeHtml(adsoyad)}</li>
-        <li><b>Telefon:</b> ${escapeHtml(telefon)}</li>
-        <li><b>E-posta:</b> ${escapeHtml(email)}</li>
-        <li><b>Ürünler:</b> ${urunler.map(escapeHtml).join(', ') || '-'}</li>
-        <li><b>Adet:</b> ${adet}</li>
-      </ul>
+      <p><b>Ad Soyad:</b> ${escapeHtml(adsoyad)}</p>
+      <p><b>Telefon:</b> ${escapeHtml(telefon)}</p>
+      <p><b>E-posta:</b> ${escapeHtml(email)}</p>
+      <p><b>İstenilen Ürün(ler):</b> ${urunler.map(escapeHtml).join(', ') || '-'}</p>
+      <p><b>Adet:</b> ${escapeHtml(adet)}</p>
       <p><b>Mesaj:</b><br/>${escapeHtml(mesaj).replace(/\n/g, '<br/>') || '-'}</p>
-      <p style="color:#888;font-size:12px">Site: rozetsepeti.com</p>
     `.trim()
 
-        await transporter.sendMail({
-            from: `"RozetSepeti Form" <no-reply@rozetsepeti.com>`,
+        // 6) Gönder
+        const info = await transporter.sendMail({
+            from: `"RozetSepeti Site" <no-reply@rozetsepeti.com>`,
             to,
-            subject,
+            subject: `Yeni Sipariş Talebi – ${adsoyad || 'İsimsiz'}`,
             html,
             attachments,
             replyTo: email || undefined,
         })
 
-        return Response.json({ ok: true })
+        // Başarılı
+        return Response.json({ ok: true, id: info.messageId })
     } catch (err: any) {
-        console.error('ORDER_API_ERROR:', err)
-        return Response.json({ ok: false, error: 'Sunucu hatası' }, { status: 500 })
+        console.error('ORDER_API_ERROR:', err?.message || err) // Render logs
+        return new Response(
+            JSON.stringify({ ok: false, error: err?.message || 'Server error' }),
+            { status: 500, headers: { 'Content-Type': 'application/json' } }
+        )
     }
 }
 
-// Basit XSS/HTML escape
+// basit XSS kaçışı
 function escapeHtml(s: string) {
-    return s.replace(/[&<>"']/g, (ch) =>
-        ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' } as any)[ch]
-    )
+    return s.replace(/[&<>"']/g, (m) => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+    }[m] as string))
 }
