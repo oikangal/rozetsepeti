@@ -3,7 +3,6 @@ import nodemailer from 'nodemailer'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
-// not: app router için body limit ayarı yok; büyük dosyada mail fail ederse hata yakalanır
 
 function envOrThrow(name: string) {
     const v = process.env[name]
@@ -14,22 +13,21 @@ function envOrThrow(name: string) {
 export async function POST(req: Request) {
     try {
         // 1) ENV
-        const host = envOrThrow('MAILTRAP_HOST')          // örn: sandbox.smtp.mailtrap.io
-        const port = Number(envOrThrow('MAILTRAP_PORT'))  // örn: 2525
-        const user = envOrThrow('MAILTRAP_USER')          // Mailtrap user
-        const pass = envOrThrow('MAILTRAP_PASS')          // Mailtrap pass
-        const to   = process.env['ORDER_TO'] || 'orders@example.com' // İstersen Render’da ORDER_TO ekle
+        const host = envOrThrow('MAILTRAP_HOST')
+        const port = Number(envOrThrow('MAILTRAP_PORT'))
+        const user = envOrThrow('MAILTRAP_USER')
+        const pass = envOrThrow('MAILTRAP_PASS')
+
+        // ✅ Mail doğrudan info@rozetsepeti.com adresine gidecek
+        const to = 'info@rozetsepeti.com'
 
         // 2) Form verisi
         const fd = await req.formData()
-
         const adsoyad = String(fd.get('adsoyad') || '')
         const telefon = String(fd.get('telefon') || '')
         const email   = String(fd.get('email')   || '')
         const adet    = String(fd.get('adet')    || '')
         const mesaj   = String(fd.get('mesaj')   || '')
-
-        // Çoklu checkbox: urunler
         const urunler = fd.getAll('urunler').map(String)
 
         // 3) Dosyalar → attachments
@@ -52,7 +50,7 @@ export async function POST(req: Request) {
             auth: { user, pass },
         })
 
-        // 5) E-posta gövdesi
+        // 5) Gövde
         const html = `
       <h2>Yeni Sipariş Talebi</h2>
       <p><b>Ad Soyad:</b> ${escapeHtml(adsoyad)}</p>
@@ -73,10 +71,9 @@ export async function POST(req: Request) {
             replyTo: email || undefined,
         })
 
-        // Başarılı
         return Response.json({ ok: true, id: info.messageId })
     } catch (err: any) {
-        console.error('ORDER_API_ERROR:', err?.message || err) // Render logs
+        console.error('ORDER_API_ERROR:', err?.message || err)
         return new Response(
             JSON.stringify({ ok: false, error: err?.message || 'Server error' }),
             { status: 500, headers: { 'Content-Type': 'application/json' } }
@@ -84,7 +81,7 @@ export async function POST(req: Request) {
     }
 }
 
-// basit XSS kaçışı
+// XSS kaçışı
 function escapeHtml(s: string) {
     return s.replace(/[&<>"']/g, (m) => ({
         '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
