@@ -1,3 +1,4 @@
+// src/components/PriceCalculator.tsx
 'use client'
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
@@ -35,16 +36,18 @@ export default function PriceCalculator({
     const tiers = PRICING_TABLES[product]
     const minQty = tiers[0]?.min ?? 1
 
-    // hesaplananda tutulan adet
-    const [qty, setQty] = useState<number>(Math.max(minDefault ?? minQty, minQty))
-    // input’ta görünen metin
-    const [qtyInput, setQtyInput] = useState<string>(String(Math.max(minDefault ?? minQty, minQty)))
+    // hesaplamada tutulan adet (başlangıçta min)
+    const startQty = Math.max(minDefault ?? minQty, minQty)
+    const [qty, setQty] = useState<number>(startQty)
 
-    // ürün değişince resetle
+    // input’ta görünen metin — BOŞ başlar (placeholder görünsün)
+    const [qtyInput, setQtyInput] = useState<string>('')
+
+    // ürün değişince qty resetlenir, input tekrar BOŞ gösterilir
     useEffect(() => {
         const start = Math.max(minDefault ?? minQty, minQty)
         setQty(start)
-        setQtyInput(String(start))
+        setQtyInput('') // ← kritik değişiklik
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [product])
 
@@ -55,21 +58,20 @@ export default function PriceCalculator({
     const vatRate = 0.2
     const grandTotal = subtotal * (1 + vatRate)
 
-    // yazdıkça sadece rakamları tut
+    // yazdıkça sadece rakamları tut (değeri hemen değiştirme)
     const onChangeQtyInput = (raw: string) => {
         const cleaned = raw.replace(/\D/g, '')
         setQtyInput(cleaned) // boş bırakmasına izin ver
     }
 
-    // kullanıcı yazmayı 300ms bırakınca otomatik commit
+    // kullanıcı yazmayı 300ms bırakınca normalize et (opsiyonel)
     useEffect(() => {
         const t = setTimeout(() => {
-            if (qtyInput === '') return // boşsa blur'da toparlarız
+            if (qtyInput === '') return // boşsa mevcut qty’yi koru
             const n = parseInt(qtyInput, 10)
             if (Number.isFinite(n)) {
                 const next = Math.max(n, minQty)
                 setQty(next)
-                // input’u normalize et
                 if (qtyInput !== String(next)) setQtyInput(String(next))
             }
         }, 300)
@@ -78,6 +80,7 @@ export default function PriceCalculator({
 
     // odaktan çıkınca da garantiye al
     const commitQty = () => {
+        if (qtyInput === '') return // ← kritik: boşsa qty’yi değiştirme
         const n = parseInt(qtyInput || '', 10)
         const next = Number.isFinite(n) ? Math.max(n, minQty) : minQty
         setQty(next)
@@ -102,7 +105,7 @@ export default function PriceCalculator({
             mt-0.5 w-full rounded-lg border px-3 py-1.5 text-sm
             focus:outline-none focus:ring-2 focus:ring-[#6E15CC]/40 focus:border-[#6E15CC]
           "
-                    placeholder={String(minQty)}
+                    placeholder={String(minQty)}  // 10 sadece placeholder
                     aria-describedby="qtyHelp"
                 />
             </label>
