@@ -18,36 +18,34 @@ const MIN_QTY = 10
 
 export default function SiparisPage() {
     const [state, setState] = useState<SubmitState>({ status: 'idle' })
-    // backend’e gidecek sayılar
+
+    // 🔵 DOLU ALAN KONTÜRÜ için basit durumlar
+    const [adsoyad, setAdsoyad] = useState('')
+    const [telefon, setTelefon] = useState('')
+    const [email, setEmail]     = useState('')
+    const [mesaj, setMesaj]     = useState('')
+
+    // adet mantığı (yazarken serbest, blur’da min 10)
     const [qty, setQty] = useState<Record<string, number>>({})
-    // input’ta görünen ham metin (yazarken serbest)
     const [qtyText, setQtyText] = useState<Record<string, string>>({})
 
-    // ürün seç/kaldır
     const toggleProduct = (key: string, checked: boolean) => {
         if (checked) {
             setQty((p) => ({ ...p, [key]: p[key] ?? MIN_QTY }))
             setQtyText((t) => ({ ...t, [key]: '' })) // başlangıçta boş görünsün
         } else {
-            setQty((p) => {
-                const n = { ...p }; delete n[key]; return n
-            })
-            setQtyText((t) => {
-                const n = { ...t }; delete n[key]; return n
-            })
+            setQty((p) => { const n = { ...p }; delete n[key]; return n })
+            setQtyText((t) => { const n = { ...t }; delete n[key]; return n })
         }
     }
 
-    // yazarken yalnızca sayıyı yansıt; min kontrolü BLUR’da
     const onQtyChange = (key: string, raw: string) => {
         const cleaned = raw.replace(/\D/g, '').slice(0, 6)
         setQtyText((t) => ({ ...t, [key]: cleaned }))
-        // backend sayısını da şimdilik yazdığı şeyin sayısal haline taşıyalım
         const n = cleaned === '' ? NaN : parseInt(cleaned, 10)
         setQty((p) => ({ ...p, [key]: Number.isFinite(n) ? n : MIN_QTY }))
     }
 
-    // odak kaybedince min 10’u uygula
     const onQtyBlur = (key: string) => {
         const current = qtyText[key] ?? ''
         const n = current === '' ? NaN : parseInt(current, 10)
@@ -61,14 +59,12 @@ export default function SiparisPage() {
         const form = e.currentTarget
         const fd = new FormData(form)
 
-        // en az bir ürün + min 10 kontrolü
         const chosen = Object.entries(qty).filter(([, n]) => Number.isFinite(n) && n >= MIN_QTY)
         if (chosen.length === 0) {
             setState({ status: 'error', message: `Lütfen en az bir ürün seçip en az ${MIN_QTY} adet girin.` })
             return
         }
 
-        // dosyalar (opsiyonel)
         const files = (fd.getAll('files') as File[]).filter(Boolean)
         for (const f of files) {
             if (f.size > MAX_FILE_MB * 1024 * 1024) {
@@ -86,14 +82,22 @@ export default function SiparisPage() {
             const res = await fetch('/api/order', { method: 'POST', body: fd })
             const json = await res.json().catch(() => ({}))
             if (!res.ok || !json?.ok) throw new Error(json?.error || 'Gönderim hatası')
+
             setState({ status: 'ok' })
             form.reset()
             setQty({})
             setQtyText({})
+            // dolu alan kontürü için tuttuğumuz değerleri de sıfırla
+            setAdsoyad(''); setTelefon(''); setEmail(''); setMesaj('')
         } catch (err: any) {
             setState({ status: 'error', message: err?.message || 'Bir hata oluştu' })
         }
     }
+
+    // 🔵 ortak sınıflar — dolu/boş durumuna göre kontür rengi
+    const baseInput =
+        'rounded-2xl border-2 px-3 py-2 text-[14px] focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/30'
+    const borderOf = (filled: boolean) => (filled ? 'border-[var(--brand)]' : 'border-gray-300')
 
     return (
         <main className="container max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -105,8 +109,11 @@ export default function SiparisPage() {
                 <label className="grid gap-1 text-sm">
                     <span className="font-medium">Ad Soyad</span>
                     <input
-                        name="adsoyad" required autoComplete="name"
-                        className="rounded-2xl border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/30 focus:border-[var(--brand)]"
+                        name="adsoyad"
+                        required
+                        autoComplete="name"
+                        onChange={(e) => setAdsoyad(e.target.value)}
+                        className={`${baseInput} ${borderOf(adsoyad.trim().length > 0)}`}
                         placeholder="Adınız ve Soyadınız"
                     />
                 </label>
@@ -115,21 +122,31 @@ export default function SiparisPage() {
                 <label className="grid gap-1 text-sm">
                     <span className="font-medium">Telefon Numarası</span>
                     <input
-                        name="telefon" required autoComplete="tel" inputMode="tel" placeholder="05xx xxx xx xx"
-                        className="rounded-2xl border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/30 focus:border-[var(--brand)]"
+                        name="telefon"
+                        required
+                        autoComplete="tel"
+                        inputMode="tel"
+                        onChange={(e) => setTelefon(e.target.value)}
+                        className={`${baseInput} ${borderOf(telefon.trim().length > 0)}`}
+                        placeholder="05xx xxx xx xx"
                     />
                 </label>
 
-                {/* E-posta */}
+                {/* E-Posta */}
                 <label className="grid gap-1 text-sm">
                     <span className="font-medium">E-Posta Adresi</span>
                     <input
-                        name="email" type="email" required autoComplete="email" placeholder="ornek@eposta.com"
-                        className="rounded-2xl border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/30 focus:border-[var(--brand)]"
+                        name="email"
+                        type="email"
+                        required
+                        autoComplete="email"
+                        onChange={(e) => setEmail(e.target.value)}
+                        className={`${baseInput} ${borderOf(email.trim().length > 0)}`}
+                        placeholder="ornek@eposta.com"
                     />
                 </label>
 
-                {/* Ürünler */}
+                {/* Ürün(ler) ve Adet(ler) */}
                 <fieldset className="grid gap-2">
                     <legend className="text-sm font-medium">İstenilen Ürün(ler) ve Adet(ler)</legend>
 
@@ -137,7 +154,7 @@ export default function SiparisPage() {
                         {URUNLER.map((u) => {
                             const checked = u.key in qty
                             return (
-                                <div key={u.key} className="flex items-center justify-between gap-3 rounded-2xl border px-3 py-2">
+                                <div key={u.key} className="flex items-center justify-between gap-3 rounded-2xl border-2 border-gray-300 px-3 py-2">
                                     <label className="flex items-center gap-2 cursor-pointer">
                                         <input
                                             type="checkbox"
@@ -155,9 +172,9 @@ export default function SiparisPage() {
                                                 <input
                                                     type="tel"
                                                     inputMode="numeric"
-                                                    value={qtyText[u.key] ?? ''}      // başlangıçta boş
-                                                    onChange={(e) => onQtyChange(u.key, e.target.value)} // yazarken sadece yansıt
-                                                    onBlur={() => onQtyBlur(u.key)}                      // blur’da min 10
+                                                    value={qtyText[u.key] ?? ''}
+                                                    onChange={(e) => onQtyChange(u.key, e.target.value)}
+                                                    onBlur={() => onQtyBlur(u.key)}
                                                     onFocus={(e) => e.currentTarget.select()}
                                                     className="w-24 rounded-md bg-white text-black px-2 py-1 text-right outline-none border-0"
                                                     placeholder={`${MIN_QTY}`}
@@ -177,18 +194,23 @@ export default function SiparisPage() {
                 <label className="grid gap-1 text-sm">
                     <span className="font-medium">Mesaj</span>
                     <textarea
-                        name="mesaj" rows={4} placeholder="Notlarınız / talepleriniz…"
-                        className="rounded-2xl border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/30 focus:border-[var(--brand)]"
+                        name="mesaj"
+                        rows={4}
+                        onChange={(e) => setMesaj(e.target.value)}
+                        className={`rounded-2xl border-2 px-3 py-2 text-[14px] focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/30 ${borderOf(mesaj.trim().length > 0)}`}
+                        placeholder="Notlarınız / talepleriniz…"
                     />
                 </label>
 
-                {/* Dosya yükleme */}
+                {/* Dosya (opsiyonel) — burada kontür sabit gri kalıyor */}
                 <div className="grid gap-1 text-sm">
                     <span className="font-medium">Logo / Dosya Yükleme (opsiyonel)</span>
                     <input
-                        name="files" type="file" multiple
+                        name="files"
+                        type="file"
+                        multiple
                         accept=".pdf,.ai,.jpg,.jpeg,.png,.tif,.tiff,application/pdf,image/jpeg,image/png,image/tiff"
-                        className="rounded-2xl border px-3 py-2 file:mr-3 file:rounded-xl file:border-0 file:bg-gray-100 file:px-3 file:py-1.5 hover:file:bg-gray-200"
+                        className="rounded-2xl border-2 border-gray-300 px-3 py-2 file:mr-3 file:rounded-xl file:border-0 file:bg-gray-100 file:px-3 file:py-1.5 hover:file:bg-gray-200"
                     />
                     <p className="text-xs text-gray-500">Maks. {MAX_FILE_MB} MB. Desteklenen: PDF, AI, JPG, PNG, TIFF.</p>
                 </div>
