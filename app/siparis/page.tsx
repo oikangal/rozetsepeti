@@ -12,53 +12,48 @@ const URUNLER = [
     { key: 'akrilik-anahtarlik', label: 'Akrilik Anahtarlık' },
 ]
 
-const OK_FILE_TYPES = ['application/pdf', 'image/jpeg', 'image/png', 'image/tiff'] as const
+const OK_FILE_TYPES = ['application/pdf','image/jpeg','image/png','image/tiff'] as const
 const MAX_FILE_MB = 20
 const MIN_QTY = 10
 
 export default function SiparisPage() {
     const [state, setState] = useState<SubmitState>({ status: 'idle' })
+    // backend’e gidecek sayılar
     const [qty, setQty] = useState<Record<string, number>>({})
-    // 👇 Görünen metni ayrı tutuyoruz; başlangıçta boş olacak
+    // input’ta görünen ham metin (yazarken serbest)
     const [qtyText, setQtyText] = useState<Record<string, string>>({})
 
     // ürün seç/kaldır
-    const toggleProduct = (key: string, checked: boolean) =>
-        setQty((p) => {
-            const next = { ...p }
-            if (checked) {
-                next[key] = next[key] ?? MIN_QTY // backend için min hazır olsun
-                setQtyText((t) => ({ ...t, [key]: '' })) // ama input boş görünsün
-            } else {
-                delete next[key]
-                setQtyText((t) => {
-                    const nt = { ...t }
-                    delete nt[key]
-                    return nt
-                })
-            }
-            return next
-        })
-
-    // adet değişimi: boş bırakılırsa görünüm boş kalır; 1–9 → hemen 10; 10+ → olduğu gibi
-    const changeQty = (key: string, raw: string) => {
-        const cleaned = raw.replace(/\D/g, '').slice(0, 6)
-
-        if (cleaned === '') {
-            setQtyText((t) => ({ ...t, [key]: '' }))
-            // backend tarafında min’i koruyoruz
-            setQty((p) => ({ ...p, [key]: MIN_QTY }))
-            return
-        }
-
-        const n = parseInt(cleaned, 10)
-        if (!Number.isFinite(n) || n < MIN_QTY) {
-            setQtyText((t) => ({ ...t, [key]: String(MIN_QTY) }))
-            setQty((p) => ({ ...p, [key]: MIN_QTY }))
+    const toggleProduct = (key: string, checked: boolean) => {
+        if (checked) {
+            setQty((p) => ({ ...p, [key]: p[key] ?? MIN_QTY }))
+            setQtyText((t) => ({ ...t, [key]: '' })) // başlangıçta boş görünsün
         } else {
-            setQtyText((t) => ({ ...t, [key]: cleaned }))
-            setQty((p) => ({ ...p, [key]: n }))
+            setQty((p) => {
+                const n = { ...p }; delete n[key]; return n
+            })
+            setQtyText((t) => {
+                const n = { ...t }; delete n[key]; return n
+            })
         }
+    }
+
+    // yazarken yalnızca sayıyı yansıt; min kontrolü BLUR’da
+    const onQtyChange = (key: string, raw: string) => {
+        const cleaned = raw.replace(/\D/g, '').slice(0, 6)
+        setQtyText((t) => ({ ...t, [key]: cleaned }))
+        // backend sayısını da şimdilik yazdığı şeyin sayısal haline taşıyalım
+        const n = cleaned === '' ? NaN : parseInt(cleaned, 10)
+        setQty((p) => ({ ...p, [key]: Number.isFinite(n) ? n : MIN_QTY }))
+    }
+
+    // odak kaybedince min 10’u uygula
+    const onQtyBlur = (key: string) => {
+        const current = qtyText[key] ?? ''
+        const n = current === '' ? NaN : parseInt(current, 10)
+        const fixed = !Number.isFinite(n) ? MIN_QTY : Math.max(MIN_QTY, n as number)
+        setQty((p) => ({ ...p, [key]: fixed }))
+        setQtyText((t) => ({ ...t, [key]: String(fixed) }))
     }
 
     const onSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -66,7 +61,7 @@ export default function SiparisPage() {
         const form = e.currentTarget
         const fd = new FormData(form)
 
-        // en az bir ürün + min 10 adet
+        // en az bir ürün + min 10 kontrolü
         const chosen = Object.entries(qty).filter(([, n]) => Number.isFinite(n) && n >= MIN_QTY)
         if (chosen.length === 0) {
             setState({ status: 'error', message: `Lütfen en az bir ürün seçip en az ${MIN_QTY} adet girin.` })
@@ -77,15 +72,11 @@ export default function SiparisPage() {
         const files = (fd.getAll('files') as File[]).filter(Boolean)
         for (const f of files) {
             if (f.size > MAX_FILE_MB * 1024 * 1024) {
-                setState({ status: 'error', message: `“${f.name}” ${MAX_FILE_MB}MB sınırını aşıyor.` })
-                return
+                setState({ status: 'error', message: `“${f.name}” ${MAX_FILE_MB}MB sınırını aşıyor.` }); return
             }
             const isAi = f.name.toLowerCase().endsWith('.ai')
             const typeOk = (OK_FILE_TYPES as readonly string[]).includes(f.type) || isAi
-            if (!typeOk) {
-                setState({ status: 'error', message: `“${f.name}” desteklenmeyen dosya türü.` })
-                return
-            }
+            if (!typeOk) { setState({ status: 'error', message: `“${f.name}” desteklenmeyen dosya türü.` }); return }
         }
 
         fd.append('urunler_json', JSON.stringify(qty))
@@ -114,9 +105,7 @@ export default function SiparisPage() {
                 <label className="grid gap-1 text-sm">
                     <span className="font-medium">Ad Soyad</span>
                     <input
-                        name="adsoyad"
-                        required
-                        autoComplete="name"
+                        name="adsoyad" required autoComplete="name"
                         className="rounded-2xl border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/30 focus:border-[var(--brand)]"
                         placeholder="Adınız ve Soyadınız"
                     />
@@ -126,11 +115,7 @@ export default function SiparisPage() {
                 <label className="grid gap-1 text-sm">
                     <span className="font-medium">Telefon Numarası</span>
                     <input
-                        name="telefon"
-                        required
-                        autoComplete="tel"
-                        inputMode="tel"
-                        placeholder="05xx xxx xx xx"
+                        name="telefon" required autoComplete="tel" inputMode="tel" placeholder="05xx xxx xx xx"
                         className="rounded-2xl border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/30 focus:border-[var(--brand)]"
                     />
                 </label>
@@ -139,11 +124,7 @@ export default function SiparisPage() {
                 <label className="grid gap-1 text-sm">
                     <span className="font-medium">E-Posta Adresi</span>
                     <input
-                        name="email"
-                        type="email"
-                        required
-                        autoComplete="email"
-                        placeholder="ornek@eposta.com"
+                        name="email" type="email" required autoComplete="email" placeholder="ornek@eposta.com"
                         className="rounded-2xl border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/30 focus:border-[var(--brand)]"
                     />
                 </label>
@@ -156,10 +137,7 @@ export default function SiparisPage() {
                         {URUNLER.map((u) => {
                             const checked = u.key in qty
                             return (
-                                <div
-                                    key={u.key}
-                                    className="flex items-center justify-between gap-3 rounded-2xl border px-3 py-2"
-                                >
+                                <div key={u.key} className="flex items-center justify-between gap-3 rounded-2xl border px-3 py-2">
                                     <label className="flex items-center gap-2 cursor-pointer">
                                         <input
                                             type="checkbox"
@@ -177,9 +155,10 @@ export default function SiparisPage() {
                                                 <input
                                                     type="tel"
                                                     inputMode="numeric"
-                                                    value={qtyText[u.key] ?? ''}          // başlangıçta boş
+                                                    value={qtyText[u.key] ?? ''}      // başlangıçta boş
+                                                    onChange={(e) => onQtyChange(u.key, e.target.value)} // yazarken sadece yansıt
+                                                    onBlur={() => onQtyBlur(u.key)}                      // blur’da min 10
                                                     onFocus={(e) => e.currentTarget.select()}
-                                                    onChange={(e) => changeQty(u.key, e.target.value)}
                                                     className="w-24 rounded-md bg-white text-black px-2 py-1 text-right outline-none border-0"
                                                     placeholder={`${MIN_QTY}`}
                                                 />
@@ -198,9 +177,7 @@ export default function SiparisPage() {
                 <label className="grid gap-1 text-sm">
                     <span className="font-medium">Mesaj</span>
                     <textarea
-                        name="mesaj"
-                        rows={4}
-                        placeholder="Notlarınız / talepleriniz…"
+                        name="mesaj" rows={4} placeholder="Notlarınız / talepleriniz…"
                         className="rounded-2xl border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/30 focus:border-[var(--brand)]"
                     />
                 </label>
@@ -209,15 +186,11 @@ export default function SiparisPage() {
                 <div className="grid gap-1 text-sm">
                     <span className="font-medium">Logo / Dosya Yükleme (opsiyonel)</span>
                     <input
-                        name="files"
-                        type="file"
-                        multiple
+                        name="files" type="file" multiple
                         accept=".pdf,.ai,.jpg,.jpeg,.png,.tif,.tiff,application/pdf,image/jpeg,image/png,image/tiff"
                         className="rounded-2xl border px-3 py-2 file:mr-3 file:rounded-xl file:border-0 file:bg-gray-100 file:px-3 file:py-1.5 hover:file:bg-gray-200"
                     />
-                    <p className="text-xs text-gray-500">
-                        Maks. {MAX_FILE_MB} MB. Desteklenen: PDF, AI, JPG, PNG, TIFF.
-                    </p>
+                    <p className="text-xs text-gray-500">Maks. {MAX_FILE_MB} MB. Desteklenen: PDF, AI, JPG, PNG, TIFF.</p>
                 </div>
 
                 {/* Gönder */}
