@@ -1,3 +1,4 @@
+// app/siparis/page.tsx
 'use client'
 
 import { useState } from 'react'
@@ -11,7 +12,7 @@ const URUNLER = [
     { key: 'akrilik-anahtarlik', label: 'Akrilik Anahtarlık' },
 ]
 
-const OK_FILE_TYPES = ['application/pdf','image/jpeg','image/png','image/tiff'] as const
+const OK_FILE_TYPES = ['application/pdf', 'image/jpeg', 'image/png', 'image/tiff'] as const
 const MAX_FILE_MB = 20
 const MIN_QTY = 10
 
@@ -19,9 +20,13 @@ export default function SiparisPage() {
     const [state, setState] = useState<SubmitState>({ status: 'idle' })
     const [qty, setQty] = useState<Record<string, number>>({})
 
+    // ürün seç/kaldır
     const toggleProduct = (key: string, checked: boolean) =>
-        setQty((p) => (checked ? { ...p, [key]: p[key] ?? MIN_QTY } : (Object.assign({}, p, (delete p[key], p)))))
+        setQty((p) =>
+            checked ? { ...p, [key]: p[key] ?? MIN_QTY } : (Object.assign({}, p, (delete p[key], p)))
+        )
 
+    // adet değişimi (min 10)
     const changeQty = (key: string, val: string) => {
         const n = parseInt(val, 10)
         setQty((p) => ({ ...p, [key]: Math.max(MIN_QTY, Number.isFinite(n) ? n : MIN_QTY) }))
@@ -32,15 +37,26 @@ export default function SiparisPage() {
         const form = e.currentTarget
         const fd = new FormData(form)
 
+        // en az bir ürün + min 10 adet
         const chosen = Object.entries(qty).filter(([, n]) => Number.isFinite(n) && n >= MIN_QTY)
-        if (chosen.length === 0) { setState({ status: 'error', message: `Lütfen en az bir ürün seçip en az ${MIN_QTY} adet girin.` }); return }
+        if (chosen.length === 0) {
+            setState({ status: 'error', message: `Lütfen en az bir ürün seçip en az ${MIN_QTY} adet girin.` })
+            return
+        }
 
+        // dosyalar (opsiyonel)
         const files = (fd.getAll('files') as File[]).filter(Boolean)
         for (const f of files) {
-            if (f.size > MAX_FILE_MB * 1024 * 1024) { setState({ status: 'error', message: `“${f.name}” ${MAX_FILE_MB}MB sınırını aşıyor.` }); return }
+            if (f.size > MAX_FILE_MB * 1024 * 1024) {
+                setState({ status: 'error', message: `“${f.name}” ${MAX_FILE_MB}MB sınırını aşıyor.` })
+                return
+            }
             const isAi = f.name.toLowerCase().endsWith('.ai')
             const typeOk = (OK_FILE_TYPES as readonly string[]).includes(f.type) || isAi
-            if (!typeOk) { setState({ status: 'error', message: `“${f.name}” desteklenmeyen dosya türü.` }); return }
+            if (!typeOk) {
+                setState({ status: 'error', message: `“${f.name}” desteklenmeyen dosya türü.` })
+                return
+            }
         }
 
         fd.append('urunler_json', JSON.stringify(qty))
@@ -64,71 +80,144 @@ export default function SiparisPage() {
             <p className="mt-2 text-gray-600">Bilgilerinizi iletin, 24 saat içinde size dönüş yapalım.</p>
 
             <form onSubmit={onSubmit} className="mt-6 grid gap-4" noValidate>
+                {/* Ad Soyad */}
                 <label className="grid gap-1 text-sm">
                     <span className="font-medium">Ad Soyad</span>
-                    <input name="adsoyad" required autoComplete="name" className="rounded-2xl border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/30 focus:border-[var(--brand)]" placeholder="Adınız ve Soyadınız" />
+                    <input
+                        name="adsoyad"
+                        required
+                        autoComplete="name"
+                        className="rounded-2xl border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/30 focus:border-[var(--brand)]"
+                        placeholder="Adınız ve Soyadınız"
+                    />
                 </label>
 
+                {/* Telefon */}
                 <label className="grid gap-1 text-sm">
                     <span className="font-medium">Telefon Numarası</span>
-                    <input name="telefon" required autoComplete="tel" inputMode="tel" placeholder="05xx xxx xx xx" className="rounded-2xl border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/30 focus:border-[var(--brand)]" />
+                    <input
+                        name="telefon"
+                        required
+                        autoComplete="tel"
+                        inputMode="tel"
+                        placeholder="05xx xxx xx xx"
+                        className="rounded-2xl border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/30 focus:border-[var(--brand)]"
+                    />
                 </label>
 
+                {/* E-posta */}
                 <label className="grid gap-1 text-sm">
                     <span className="font-medium">E-Posta Adresi</span>
-                    <input name="email" type="email" required autoComplete="email" placeholder="ornek@eposta.com" className="rounded-2xl border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/30 focus:border-[var(--brand)]" />
+                    <input
+                        name="email"
+                        type="email"
+                        required
+                        autoComplete="email"
+                        placeholder="ornek@eposta.com"
+                        className="rounded-2xl border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/30 focus:border-[var(--brand)]"
+                    />
                 </label>
 
+                {/* Ürünler */}
                 <fieldset className="grid gap-2">
                     <legend className="text-sm font-medium">İstenilen Ürün(ler) ve Adet(ler)</legend>
+
                     <div className="grid gap-2">
                         {URUNLER.map((u) => {
                             const checked = u.key in qty
                             return (
-                                <div key={u.key} className="flex items-center justify-between gap-3 rounded-2xl border px-3 py-2">
+                                <div
+                                    key={u.key}
+                                    className="flex items-center justify-between gap-3 rounded-2xl border px-3 py-2"
+                                >
+                                    {/* ürün checkbox + etiket */}
                                     <label className="flex items-center gap-2 cursor-pointer">
-                                        <input type="checkbox" className="accent-[var(--brand)]" checked={checked} onChange={(ev) => toggleProduct(u.key, ev.currentTarget.checked)} />
+                                        <input
+                                            type="checkbox"
+                                            className="accent-[var(--brand)]"
+                                            checked={checked}
+                                            onChange={(ev) => toggleProduct(u.key, ev.currentTarget.checked)}
+                                        />
                                         <span className="text-sm">{u.label}</span>
                                     </label>
+
+                                    {/* seçilince mor kapsül içinde adet */}
                                     {checked && (
-                                        <div className="flex items-center gap-2">
-                                            <span className="text-xs text-gray-600">Adet</span>
-                                            <input
-                                                type="number" min={MIN_QTY}
-                                                value={qty[u.key] ?? MIN_QTY}
-                                                onChange={(e) => changeQty(u.key, e.target.value)}
-                                                className="w-24 rounded-xl border px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/30 focus:border-[var(--brand)]"
-                                                inputMode="numeric"
-                                            />
+                                        <div className="flex items-center">
+                                            <div className="flex items-center bg-[#33258C] text-white rounded-full pl-4 pr-2 py-1.5">
+                                                <span className="text-xs font-semibold mr-2">Adet</span>
+                                                <input
+                                                    type="tel"
+                                                    inputMode="numeric"
+                                                    value={qty[u.key] ?? MIN_QTY}
+                                                    onFocus={(e) => e.currentTarget.select()} // tek hamlede üzerine yaz
+                                                    onChange={(e) => changeQty(u.key, e.target.value)}
+                                                    className="w-24 rounded-md bg-white text-black px-2 py-1 text-right outline-none border-0"
+                                                    placeholder={`${MIN_QTY}`}
+                                                />
+                                            </div>
                                         </div>
                                     )}
                                 </div>
                             )
                         })}
                     </div>
+
                     <p className="text-xs text-gray-500 mt-1">Her ürün için minimum {MIN_QTY} adettir.</p>
                 </fieldset>
 
+                {/* Mesaj */}
                 <label className="grid gap-1 text-sm">
                     <span className="font-medium">Mesaj</span>
-                    <textarea name="mesaj" rows={4} placeholder="Notlarınız / talepleriniz…" className="rounded-2xl border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/30 focus:border-[var(--brand)]" />
+                    <textarea
+                        name="mesaj"
+                        rows={4}
+                        placeholder="Notlarınız / talepleriniz…"
+                        className="rounded-2xl border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/30 focus:border-[var(--brand)]"
+                    />
                 </label>
 
+                {/* Dosya yükleme */}
                 <div className="grid gap-1 text-sm">
                     <span className="font-medium">Logo / Dosya Yükleme (opsiyonel)</span>
-                    <input name="files" type="file" multiple accept=".pdf,.ai,.jpg,.jpeg,.png,.tif,.tiff,application/pdf,image/jpeg,image/png,image/tiff" className="rounded-2xl border px-3 py-2 file:mr-3 file:rounded-xl file:border-0 file:bg-gray-100 file:px-3 file:py-1.5 hover:file:bg-gray-200" />
-                    <p className="text-xs text-gray-500">Maks. {MAX_FILE_MB} MB. Desteklenen: PDF, AI, JPG, PNG, TIFF.</p>
+                    <input
+                        name="files"
+                        type="file"
+                        multiple
+                        accept=".pdf,.ai,.jpg,.jpeg,.png,.tif,.tiff,application/pdf,image/jpeg,image/png,image/tiff"
+                        className="rounded-2xl border px-3 py-2 file:mr-3 file:rounded-xl file:border-0 file:bg-gray-100 file:px-3 file:py-1.5 hover:file:bg-gray-200"
+                    />
+                    <p className="text-xs text-gray-500">
+                        Maks. {MAX_FILE_MB} MB. Desteklenen: PDF, AI, JPG, PNG, TIFF.
+                    </p>
                 </div>
 
+                {/* Gönder */}
                 <div className="pt-2">
-                    <button type="submit" disabled={state.status === 'sending'} className="group relative overflow-hidden inline-flex items-center justify-center rounded-full px-6 py-2.5 min-w-[200px] text-sm font-medium shadow-sm text-white disabled:opacity-60" style={{ background: 'var(--brand)' }} aria-busy={state.status === 'sending'}>
+                    <button
+                        type="submit"
+                        disabled={state.status === 'sending'}
+                        className="group relative overflow-hidden inline-flex items-center justify-center rounded-full px-6 py-2.5 min-w-[200px] text-sm font-medium shadow-sm text-white disabled:opacity-60"
+                        style={{ background: 'var(--brand)' }}
+                        aria-busy={state.status === 'sending'}
+                    >
                         <span className="absolute inset-x-0 bottom-0 h-0 bg-[#F9B233] transition-all duration-300 ease-out group-hover:h-full" />
-                        <span className="relative z-10 group-hover:text-black">{state.status === 'sending' ? 'Gönderiliyor…' : 'Formu Gönder'}</span>
+                        <span className="relative z-10 group-hover:text-black">
+              {state.status === 'sending' ? 'Gönderiliyor…' : 'Formu Gönder'}
+            </span>
                     </button>
                 </div>
 
-                {state.status === 'ok' && <div className="mt-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">Talebiniz başarıyla alınmıştır. 24 saat içerisinde size dönüş sağlanacaktır.</div>}
-                {state.status === 'error' && <div className="mt-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{state.message || 'Gönderim sırasında bir hata oluştu.'}</div>}
+                {state.status === 'ok' && (
+                    <div className="mt-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+                        Talebiniz başarıyla alınmıştır. 24 saat içerisinde size dönüş sağlanacaktır.
+                    </div>
+                )}
+                {state.status === 'error' && (
+                    <div className="mt-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+                        {state.message || 'Gönderim sırasında bir hata oluştu.'}
+                    </div>
+                )}
             </form>
         </main>
     )
