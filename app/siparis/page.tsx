@@ -19,17 +19,46 @@ const MIN_QTY = 10
 export default function SiparisPage() {
     const [state, setState] = useState<SubmitState>({ status: 'idle' })
     const [qty, setQty] = useState<Record<string, number>>({})
+    // 👇 Görünen metni ayrı tutuyoruz; başlangıçta boş olacak
+    const [qtyText, setQtyText] = useState<Record<string, string>>({})
 
     // ürün seç/kaldır
     const toggleProduct = (key: string, checked: boolean) =>
-        setQty((p) =>
-            checked ? { ...p, [key]: p[key] ?? MIN_QTY } : (Object.assign({}, p, (delete p[key], p)))
-        )
+        setQty((p) => {
+            const next = { ...p }
+            if (checked) {
+                next[key] = next[key] ?? MIN_QTY // backend için min hazır olsun
+                setQtyText((t) => ({ ...t, [key]: '' })) // ama input boş görünsün
+            } else {
+                delete next[key]
+                setQtyText((t) => {
+                    const nt = { ...t }
+                    delete nt[key]
+                    return nt
+                })
+            }
+            return next
+        })
 
-    // adet değişimi (min 10)
-    const changeQty = (key: string, val: string) => {
-        const n = parseInt(val, 10)
-        setQty((p) => ({ ...p, [key]: Math.max(MIN_QTY, Number.isFinite(n) ? n : MIN_QTY) }))
+    // adet değişimi: boş bırakılırsa görünüm boş kalır; 1–9 → hemen 10; 10+ → olduğu gibi
+    const changeQty = (key: string, raw: string) => {
+        const cleaned = raw.replace(/\D/g, '').slice(0, 6)
+
+        if (cleaned === '') {
+            setQtyText((t) => ({ ...t, [key]: '' }))
+            // backend tarafında min’i koruyoruz
+            setQty((p) => ({ ...p, [key]: MIN_QTY }))
+            return
+        }
+
+        const n = parseInt(cleaned, 10)
+        if (!Number.isFinite(n) || n < MIN_QTY) {
+            setQtyText((t) => ({ ...t, [key]: String(MIN_QTY) }))
+            setQty((p) => ({ ...p, [key]: MIN_QTY }))
+        } else {
+            setQtyText((t) => ({ ...t, [key]: cleaned }))
+            setQty((p) => ({ ...p, [key]: n }))
+        }
     }
 
     const onSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -69,6 +98,7 @@ export default function SiparisPage() {
             setState({ status: 'ok' })
             form.reset()
             setQty({})
+            setQtyText({})
         } catch (err: any) {
             setState({ status: 'error', message: err?.message || 'Bir hata oluştu' })
         }
@@ -130,7 +160,6 @@ export default function SiparisPage() {
                                     key={u.key}
                                     className="flex items-center justify-between gap-3 rounded-2xl border px-3 py-2"
                                 >
-                                    {/* ürün checkbox + etiket */}
                                     <label className="flex items-center gap-2 cursor-pointer">
                                         <input
                                             type="checkbox"
@@ -141,7 +170,6 @@ export default function SiparisPage() {
                                         <span className="text-sm">{u.label}</span>
                                     </label>
 
-                                    {/* seçilince mor kapsül içinde adet */}
                                     {checked && (
                                         <div className="flex items-center">
                                             <div className="flex items-center bg-[#33258C] text-white rounded-full pl-4 pr-2 py-1.5">
@@ -149,8 +177,8 @@ export default function SiparisPage() {
                                                 <input
                                                     type="tel"
                                                     inputMode="numeric"
-                                                    value={qty[u.key] ?? MIN_QTY}
-                                                    onFocus={(e) => e.currentTarget.select()} // tek hamlede üzerine yaz
+                                                    value={qtyText[u.key] ?? ''}          // başlangıçta boş
+                                                    onFocus={(e) => e.currentTarget.select()}
                                                     onChange={(e) => changeQty(u.key, e.target.value)}
                                                     className="w-24 rounded-md bg-white text-black px-2 py-1 text-right outline-none border-0"
                                                     placeholder={`${MIN_QTY}`}
