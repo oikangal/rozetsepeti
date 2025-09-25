@@ -9,6 +9,9 @@
     --brand: #6E15CC; /* hover alt-çizgi ve vurgu rengi */
 }
 
+/* Temel kutu modeli (taşmaları azaltır) */
+*, *::before, *::after { box-sizing: border-box; }
+
 /* Genel davranışlar */
 html {
     scroll-behavior: smooth;
@@ -17,6 +20,13 @@ html {
     text-size-adjust: 100%;
 }
 body { background: rgb(var(--rs-bg)); color: rgb(var(--rs-fg)); }
+
+/* Görseller/medya taşma koruması */
+img, video, canvas, svg {
+    max-width: 100%;
+    height: auto;
+    display: block;
+}
 
 /* Erişilebilir odak */
 :focus-visible { outline: 2px solid #0284c7; outline-offset: 2px; }
